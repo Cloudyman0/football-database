@@ -19,3 +19,27 @@
 .modal-backdrop{position:fixed;inset:0;background:#15263b66;z-index:30;display:grid;place-items:center;padding:18px}.modal{width:min(440px,100%);max-height:90vh;overflow:auto;background:#fff;border-radius:17px;padding:23px;box-shadow:0 20px 60px #14253b33}.modal-wide{width:min(650px,100%)}.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:17px}.modal-header h2{font:800 19px Manrope;color:#263950;margin:0}.modal-intro{font-size:13px;color:#8390a0;margin:0 0 5px}.form-stack{display:flex;flex-direction:column;gap:15px}.field{display:flex;flex-direction:column;gap:7px;color:#5f7086;font-size:12px;font-weight:700}.field input{width:100%;border:1px solid #dfe6ee;border-radius:9px;padding:11px 12px;outline:0;color:#34465d;background:#fff;font-size:13px}.field input:focus{border-color:#80addd;box-shadow:0 0 0 3px #eaf3fd}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:4px}.form-error{color:#bb5555;font-size:12px;margin:0}.alert{display:flex;align-items:center;gap:10px;background:#fff6ed;border:1px solid #f4dfc8;border-radius:10px;padding:12px 14px;color:#9b6532;font-size:12px;margin-bottom:17px}.alert span{flex:1;overflow-wrap:anywhere}.alert button{border:0;background:transparent;color:inherit}.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:850px){.topbar{padding:0 5%;height:68px}.desktop-nav{gap:0}.nav-link{padding:0 9px;font-size:12px}.stats-grid{gap:10px}.stat-card{padding:15px}.stat-value{font-size:17px}.filter-wrap select{max-width:145px}.stats-detail-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:650px){.topbar{height:64px}.desktop-nav{display:none}.mobile-menu-button{display:block}.mobile-nav{display:flex;flex-direction:column;background:#fff;border-bottom:1px solid #e8edf3;padding:8px 5%;gap:4px}.mobile-nav button{border:0;background:#fff;text-align:left;padding:11px;color:#52647a;font-weight:600}.main-content{width:92%;margin:27px auto 40px}.page-heading{align-items:flex-start;flex-direction:column}.page-heading .primary-button{width:100%}.stats-grid{grid-template-columns:1fr;gap:9px}.stat-card{padding:13px 15px}.stat-icon{width:37px;height:37px}.toolbar{flex-direction:column}.filter-wrap{width:100%}.filter-wrap select{flex:1;max-width:none;min-width:0}.panel{padding:16px}.panel-heading{align-items:flex-start}.sort-row{gap:5px}.two-columns{grid-template-columns:1fr}.detail-hero{padding:18px;gap:13px;flex-wrap:wrap}.detail-avatar{width:64px;height:64px;border-radius:17px;font-size:20px}.detail-main h1{font-size:24px}.detail-value{width:100%;text-align:left;border-top:1px solid #eef1f5;padding-top:13px}.detail-stats{grid-template-columns:1fr 1fr}.detail-admin{align-items:flex-start;flex-direction:column;gap:12px}.form-grid{grid-template-columns:1fr}.footer{padding:16px 5%}.players-table th,.players-table td{padding:11px 9px}.login-button{padding:9px 10px;font-size:12px}.admin-pill{font-size:11px}}
+
+/* Vereinsverwaltung und erweiterte Spielerfelder */
+.field select{width:100%;border:1px solid #dfe6ee;border-radius:9px;padding:11px 12px;outline:0;color:#34465d;background:#fff;font-size:13px}
+.clubs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:15px}
+.club-card{border:1px solid #e8edf3;border-radius:14px;padding:17px;background:#fff;min-width:0}
+.club-card-top{display:flex;align-items:center;gap:13px;min-height:62px}
+.club-logo,.club-logo-placeholder{width:58px;height:58px;object-fit:contain;flex-shrink:0;border-radius:12px;background:#f7f9fc;padding:6px}
+.club-logo-placeholder{display:grid;place-items:center;color:#91a1b4}
+.club-logo-placeholder svg{width:27px;height:27px}
+.club-card-info{min-width:0}
+.club-card-info h3{font:800 15px Manrope,sans-serif;color:#2d4058;margin:0 0 5px;overflow-wrap:anywhere}
+.club-card-info p{font-size:11px;color:#8794a5;margin:0}
+.club-card-stats{display:flex;justify-content:space-between;gap:8px;border-top:1px solid #eff2f6;margin-top:15px;padding-top:13px;color:#8a97a7;font-size:11px}
+.club-card-stats strong{display:block;color:#40536b;font-size:13px;margin-bottom:3px}
+.club-card-actions{display:flex;gap:8px;margin-top:13px}
+.club-card-actions button{flex:1}
+.club-name-cell{display:inline-flex;align-items:center;gap:7px}
+.table-club-logo{width:22px;height:22px;object-fit:contain;background:#f7f9fc;border-radius:5px;padding:2px}
+.logo-preview-row{display:flex;align-items:center;gap:12px;color:#697a90;font-size:12px}
+.logo-preview-row img{width:48px;height:48px;object-fit:contain;border:1px solid #e8edf3;border-radius:9px;padding:4px}
+.helper-text{font-size:11px;color:#8b98a8;margin:0}
+@media(max-width:650px){.clubs-grid{grid-template-columns:1fr}}
+
+.detail-club-logo{width:23px;height:23px;object-fit:contain;vertical-align:middle;margin-right:6px}.extra-player-stats{margin-top:13px}
