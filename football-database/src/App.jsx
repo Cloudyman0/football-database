@@ -3,8 +3,11 @@ import {
   Search, SlidersHorizontal, Plus, ArrowUpDown, Users, TrendingUp,
   Shield, LogOut, X, ChevronLeft, Pencil, Trash2, Trophy, ChartNoAxesCombined,
   Menu, UserRound, CalendarDays, Target, Footprints, Euro, LoaderCircle,
-  AlertCircle, Database, RefreshCw, Building2, ImagePlus, MapPin, Ruler, Shirt
+  AlertCircle, Database, RefreshCw, Building2, ImagePlus, MapPin, Ruler, Shirt, Map as MapIcon
 } from "lucide-react";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { supabase } from "./lib/supabase";
 
 const money = (value) => new Intl.NumberFormat("de-DE", {
@@ -37,7 +40,7 @@ function initials(name = "") {
 }
 
 const emptyForm = { name:"", club_id:"", market_value:"", goals:"0", assists:"0", age:"", nationality:"", position:"", birth_date:"", height_cm:"", shirt_number:"" };
-const emptyClubForm = { name:"", country:"", league:"", logoFile:null, logo_url:"" };
+const emptyClubForm = { name:"", country:"", league:"", city:"", latitude:"", longitude:"", logoFile:null, logo_url:"" };
 
 export default function App() {
   const [players, setPlayers] = useState([]);
@@ -55,6 +58,7 @@ export default function App() {
   const [nationFilter, setNationFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("database");
   const [selected, setSelected] = useState(null);
+  const [selectedClub, setSelectedClub] = useState(null);
   const [session, setSession] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -117,6 +121,7 @@ export default function App() {
   const averageValue = players.length ? totalValue / players.length : 0;
   const topScorers = [...players].sort((a,b)=>Number(b.goals)-Number(a.goals)).slice(0,5);
   const topAssists = [...players].sort((a,b)=>Number(b.assists)-Number(a.assists)).slice(0,5);
+  const topValues = [...players].sort((a,b)=>Number(b.market_value)-Number(a.market_value)).slice(0,5);
 
   async function login(e) {
     e.preventDefault(); setAuthBusy(true); setError("");
@@ -162,7 +167,7 @@ export default function App() {
   function openAddClub() { setClubEditing(null); setClubForm(emptyClubForm); setShowClubForm(true); }
   function openEditClub(club) {
     setClubEditing(club);
-    setClubForm({name:club.name || "",country:club.country || "",league:club.league || "",logoFile:null,logo_url:club.logo_url || ""});
+    setClubForm({name:club.name || "",country:club.country || "",league:club.league || "",city:club.city || "",latitude:club.latitude == null ? "" : String(club.latitude),longitude:club.longitude == null ? "" : String(club.longitude),logoFile:null,logo_url:club.logo_url || ""});
     setShowClubForm(true);
   }
   async function saveClub(e) {
@@ -177,7 +182,8 @@ export default function App() {
       const { data: publicData } = supabase.storage.from("club-logos").getPublicUrl(path);
       logoUrl = publicData.publicUrl;
     }
-    const payload = {name:clubForm.name.trim(),country:clubForm.country.trim() || null,league:clubForm.league.trim() || null,logo_url:logoUrl};
+    const payload = {name:clubForm.name.trim(),country:clubForm.country.trim() || null,league:clubForm.league.trim() || null,city:clubForm.city.trim() || null,latitude:clubForm.latitude.trim() === "" ? null : Number(clubForm.latitude),longitude:clubForm.longitude.trim() === "" ? null : Number(clubForm.longitude),logo_url:logoUrl};
+    if ((payload.latitude == null) !== (payload.longitude == null) || (payload.latitude != null && (payload.latitude < -90 || payload.latitude > 90 || payload.longitude < -180 || payload.longitude > 180))) { setError("Bitte gib entweder beide Koordinaten korrekt ein oder lass beide Felder leer."); setClubBusy(false); return; }
     const result = clubEditing
       ? await supabase.from("clubs").update(payload).eq("id",clubEditing.id)
       : await supabase.from("clubs").insert(payload);
@@ -207,16 +213,17 @@ export default function App() {
     {id:"database",label:"Datenbank",icon:Database},
     {id:"top",label:"Top-Spieler",icon:Trophy},
     {id:"stats",label:"Statistiken",icon:ChartNoAxesCombined},
-    {id:"clubs",label:"Vereine",icon:Building2}
+    {id:"clubs",label:"Vereine",icon:Building2},
+    {id:"map",label:"Karte",icon:MapIcon}
   ];
 
   return <div className="app-shell">
     <header className="topbar">
-      <a className="brand" href="#" onClick={e=>{e.preventDefault();setSelected(null);setActiveTab("database");}}>
+      <a className="brand" href="#" onClick={e=>{e.preventDefault();setSelected(null);setSelectedClub(null);setActiveTab("database");}}>
         <span className="brand-mark"><Footprints size={21}/></span><span>Football<span className="brand-light">DB</span></span>
       </a>
       <nav className="desktop-nav">
-        {navItems.map(item=><button key={item.id} className={`nav-link ${activeTab===item.id&&!selected?"active":""}`} onClick={()=>{setSelected(null);setActiveTab(item.id);}}><item.icon size={17}/>{item.label}</button>)}
+        {navItems.map(item=><button key={item.id} className={`nav-link ${activeTab===item.id&&!selected?"active":""}`} onClick={()=>{setSelected(null);setSelectedClub(null);setActiveTab(item.id);}}><item.icon size={17}/>{item.label}</button>)}
       </nav>
       <div className="top-actions">
         {session ? <><span className="admin-pill"><Shield size={14}/> Admin</span><button className="icon-button" title="Abmelden" onClick={logout}><LogOut size={18}/></button></> :
@@ -225,14 +232,14 @@ export default function App() {
       </div>
     </header>
 
-    {mobileMenu && <div className="mobile-nav">{navItems.map(item=><button key={item.id} onClick={()=>{setActiveTab(item.id);setSelected(null);setMobileMenu(false);}}>{item.label}</button>)}</div>}
+    {mobileMenu && <div className="mobile-nav">{navItems.map(item=><button key={item.id} onClick={()=>{setActiveTab(item.id);setSelected(null);setSelectedClub(null);setMobileMenu(false);}}>{item.label}</button>)}</div>}
 
     <main className="main-content">
-      {selected ? <PlayerDetail player={selected} clubs={clubsData} isAdmin={!!session} onBack={()=>setSelected(null)} onEdit={()=>openEdit(selected)} onDelete={()=>deletePlayer(selected)} /> :
+      {selected ? <PlayerDetail player={selected} clubs={clubsData} isAdmin={!!session} onBack={()=>setSelected(null)} onEdit={()=>openEdit(selected)} onDelete={()=>deletePlayer(selected)} /> : selectedClub ? <ClubDetail club={selectedClub} players={players} onBack={()=>setSelectedClub(null)} onSelectPlayer={setSelected} /> :
       <>
         <section className="page-heading">
-          <div><div className="eyebrow">DIE WELT DES FUSSBALLS</div><h1>{activeTab==="database"?"Spielerdatenbank":activeTab==="top"?"Top-Spieler":activeTab==="clubs"?"Vereine":"Statistiken"}</h1>
-            <p>Alle Spieler, Werte und Leistungen auf einen Blick.</p></div>
+          <div><div className="eyebrow">DIE WELT DES FUSSBALLS</div><h1>{activeTab==="database"?"Spielerdatenbank":activeTab==="top"?"Top-Spieler":activeTab==="clubs"?"Vereine":activeTab==="map"?"Vereinskarte":"Statistiken"}</h1>
+            <p>{activeTab==="map" ? "Entdecke Fußballvereine und ihre Standorte in Europa." : "Alle Spieler, Werte und Leistungen auf einen Blick."}</p></div>
           {session && activeTab==="database" && <button className="primary-button" onClick={openAdd}><Plus size={18}/> Spieler hinzufügen</button>}
           {session && activeTab==="clubs" && <button className="primary-button" onClick={openAddClub}><Plus size={18}/> Verein hinzufügen</button>}
         </section>
@@ -256,7 +263,9 @@ export default function App() {
           {!loading&&filtered.length===0&&<div className="empty-state"><Users size={30}/><strong>Keine Spieler gefunden</strong><span>Ändere deine Suche oder füge im Admin-Modus Spieler hinzu.</span></div>}
         </section>}
 
-        {activeTab==="top" && <div className="two-columns"><Ranking title="Meiste Tore" icon={<Target/>} players={topScorers} stat="goals" unit="Tore" onSelect={setSelected}/><Ranking title="Meiste Vorlagen" icon={<Footprints/>} players={topAssists} stat="assists" unit="Vorlagen" onSelect={setSelected}/></div>}
+        {activeTab==="top" && <div className="three-columns"><Ranking title="Meiste Tore" icon={<Target/>} players={topScorers} stat="goals" unit="Tore" onSelect={setSelected}/><Ranking title="Meiste Vorlagen" icon={<Footprints/>} players={topAssists} stat="assists" unit="Vorlagen" onSelect={setSelected}/><Ranking title="Höchste Marktwerte" icon={<Euro/>} players={topValues} stat="market_value" unit="" onSelect={setSelected}/></div>}
+
+        {activeTab==="map" && <ClubMap clubs={clubsData} players={players} onOpenClub={setSelectedClub}/>}
 
         {activeTab==="clubs" && <section className="panel">
           <div className="panel-heading"><div><h2>Alle Vereine</h2><p>{clubsData.length} {clubsData.length===1?"Verein":"Vereine"} in der Datenbank</p></div><button className="subtle-button" onClick={loadClubs}><RefreshCw size={16}/> Aktualisieren</button></div>
@@ -294,11 +303,14 @@ export default function App() {
         <Field label="Vereinsname"><input required value={clubForm.name} onChange={e=>setClubForm({...clubForm,name:e.target.value})} placeholder="z. B. FC Bayern München"/></Field>
         <Field label="Land"><input value={clubForm.country} onChange={e=>setClubForm({...clubForm,country:e.target.value})} placeholder="z. B. Deutschland"/></Field>
         <Field label="Liga"><input value={clubForm.league} onChange={e=>setClubForm({...clubForm,league:e.target.value})} placeholder="z. B. Bundesliga"/></Field>
+        <Field label="Stadt"><input value={clubForm.city} onChange={e=>setClubForm({...clubForm,city:e.target.value})} placeholder="z. B. München"/></Field>
+        <Field label="Breitengrad"><input type="number" step="any" min="-90" max="90" value={clubForm.latitude} onChange={e=>setClubForm({...clubForm,latitude:e.target.value})} placeholder="z. B. 48.137"/></Field>
+        <Field label="Längengrad"><input type="number" step="any" min="-180" max="180" value={clubForm.longitude} onChange={e=>setClubForm({...clubForm,longitude:e.target.value})} placeholder="z. B. 11.576"/></Field>
         <Field label="Vereinslogo"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>setClubForm({...clubForm,logoFile:e.target.files?.[0] || null})}/></Field>
       </div>
       {clubForm.logo_url && !clubForm.logoFile && <div className="logo-preview-row"><img src={clubForm.logo_url} alt="Aktuelles Vereinslogo"/><span>Aktuelles Logo</span></div>}
       {clubForm.logoFile && <div className="logo-preview-row"><span>{clubForm.logoFile.name}</span></div>}
-      <p className="helper-text">Empfohlen: PNG, JPG oder WebP. Am besten ein quadratisches Logo mit transparentem Hintergrund.</p>
+      <p className="helper-text">Für die Karte: Stadt und Koordinaten des Stadions eintragen. Koordinaten findest du z. B. in OpenStreetMap. Logo: PNG, JPG oder WebP.</p>
       {error&&<p className="form-error">{error}</p>}
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setShowClubForm(false)}>Abbrechen</button><button className="primary-button" disabled={clubBusy}>{clubBusy?<LoaderCircle className="spin"/>:<><Plus size={17}/>{clubEditing?"Speichern":"Verein speichern"}</>}</button></div>
     </form></Modal>}
@@ -343,4 +355,43 @@ function PlayerDetail({player,clubs,isAdmin,onBack,onEdit,onDelete}) {
     {isAdmin&&<div className="detail-admin"><span>Admin-Aktionen</span><div><button className="secondary-button" onClick={onEdit}><Pencil size={16}/> Bearbeiten</button><button className="danger-button" onClick={onDelete}><Trash2 size={16}/> Löschen</button></div></div>}</section>;
 }
 function DetailStat({icon,label,value}) { return <div className="detail-stat"><span className="stat-icon">{icon}</span><span className="stat-label">{label}</span><strong>{value}</strong></div>; }
-function Ranking({title,icon,players,stat,unit,onSelect}) { return <section className="panel ranking-panel"><div className="panel-heading"><div className="ranking-title">{icon}<div><h2>{title}</h2><p>Aktuelle Saison</p></div></div></div>{players.length?players.map((p,i)=><button className="ranking-row" key={p.id} onClick={()=>onSelect(p)}><span className="rank-number">{i+1}</span><span className="avatar">{initials(p.name)}</span><span className="ranking-player"><strong>{p.name}</strong><small>{p.club}</small></span><strong className="ranking-score">{p[stat]} <small>{unit}</small></strong></button>):<div className="empty-state">Noch keine Spieler vorhanden.</div>}</section>; }
+function Ranking({title,icon,players,stat,unit,onSelect}) { return <section className="panel ranking-panel"><div className="panel-heading"><div className="ranking-title">{icon}<div><h2>{title}</h2><p>Aktuelle Saison</p></div></div></div>{players.length?players.map((p,i)=><button className="ranking-row" key={p.id} onClick={()=>onSelect(p)}><span className="rank-number">{i+1}</span><span className="avatar">{initials(p.name)}</span><span className="ranking-player"><strong>{p.name}</strong><small>{p.club}</small></span><strong className="ranking-score">{stat==="market_value"?money(p[stat]):p[stat]} <small>{unit}</small></strong></button>):<div className="empty-state">Noch keine Spieler vorhanden.</div>}</section>; }
+
+function ClubMap({clubs,players,onOpenClub}) {
+  const [search,setSearch] = useState("");
+  const [country,setCountry] = useState("all");
+  const [league,setLeague] = useState("all");
+  const countries = [...new Set(clubs.map(c=>c.country).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"de"));
+  const leagues = [...new Set(clubs.map(c=>c.league).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"de"));
+  const located = clubs.filter(c=>c.latitude !== null && c.latitude !== undefined && c.longitude !== null && c.longitude !== undefined && Number.isFinite(Number(c.latitude)) && Number.isFinite(Number(c.longitude)));
+  const filtered = located.filter(c=>{
+    const q=search.trim().toLowerCase();
+    return (!q || [c.name,c.city,c.country,c.league].some(v=>String(v||"").toLowerCase().includes(q))) && (country==="all" || c.country===country) && (league==="all" || c.league===league);
+  });
+  return <section className="panel map-panel">
+    <div className="panel-heading"><div><h2>Fußballvereine in Europa</h2><p>{filtered.length} von {located.length} Vereinen mit Standort auf der Karte</p></div><span className="map-source">OpenStreetMap</span></div>
+    <div className="map-toolbar">
+      <label className="search-box"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Verein oder Stadt suchen..."/>{search&&<button onClick={()=>setSearch("")}><X size={15}/></button>}</label>
+      <select value={country} onChange={e=>setCountry(e.target.value)}><option value="all">Alle Länder</option>{countries.map(c=><option key={c}>{c}</option>)}</select>
+      <select value={league} onChange={e=>setLeague(e.target.value)}><option value="all">Alle Ligen</option>{leagues.map(l=><option key={l}>{l}</option>)}</select>
+    </div>
+    <div className="map-frame"><MapContainer center={[50,15]} zoom={4} minZoom={3} maxZoom={18} scrollWheelZoom={true} maxBounds={[[33,-15],[72,40]]} maxBoundsViscosity={0.75}>
+      <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+      {filtered.map(club=><Marker key={club.id} position={[Number(club.latitude),Number(club.longitude)]} icon={makeClubIcon(club.logo_url,club.name)}><Popup><div className="map-popup">{club.logo_url&&<img src={club.logo_url} alt=""/>}<strong>{club.name}</strong><span>{[club.city,club.country].filter(Boolean).join(", ")}</span><small>{club.league || ""} · {players.filter(p=>p.club_id===club.id || (!p.club_id && p.club===club.name)).length} Spieler</small><button onClick={()=>onOpenClub(club)}>Vereinsprofil öffnen</button></div></Popup></Marker>)}
+    </MapContainer></div>
+    {located.length===0 ? <div className="map-empty"><MapPin size={20}/><strong>Noch keine Standorte eingetragen</strong><span>Öffne im Bereich „Vereine“ einen Verein und ergänze Stadt sowie Koordinaten. Danach erscheint er hier auf der Karte.</span></div> : filtered.length===0 ? <div className="map-empty">Keine Vereine für diese Suche gefunden.</div> : <p className="map-hint">Tipp: Wähle eine Markierung aus, um das Vereinsprofil zu öffnen. Du kannst die Karte verschieben und hineinzoomen.</p>}
+  </section>;
+}
+
+function makeClubIcon(logoUrl,name) {
+  const rawUrl=String(logoUrl||"");
+  const safeUrl=/^https?:\/\//i.test(rawUrl) ? rawUrl.replace(/&/g,"&amp;").replace(/\"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;") : "";
+  const inner=safeUrl ? `<img src="${safeUrl}" alt=""/>` : `<span>${String(name||"?").slice(0,1).toUpperCase()}</span>`;
+  return L.divIcon({className:"club-marker-wrapper",html:`<div class="map-club-marker">${inner}</div>`,iconSize:[42,42],iconAnchor:[21,21],popupAnchor:[0,-19]});
+}
+
+function ClubDetail({club,players,onBack,onSelectPlayer}) {
+  const squad=players.filter(p=>p.club_id===club.id || (!p.club_id && p.club===club.name)).sort((a,b)=>Number(b.market_value||0)-Number(a.market_value||0));
+  const squadValue=squad.reduce((sum,p)=>sum+Number(p.market_value||0),0);
+  return <section className="detail-page"><button className="back-button" onClick={onBack}><ChevronLeft size={17}/> Zurück</button><div className="detail-hero"><div className="club-detail-logo-wrap">{club.logo_url?<img src={club.logo_url} alt={`${club.name} Logo`}/>:<Building2/>}</div><div className="detail-main"><span className="eyebrow">VEREINSPROFIL</span><h1>{club.name}</h1><p>{[club.city,club.country,club.league].filter(Boolean).join(" · ")}</p></div><div className="detail-value"><span>Kaderwert</span><strong>{money(squadValue)}</strong></div></div><div className="detail-stats"><DetailStat icon={<Users/>} label="Kadergröße" value={`${squad.length} Spieler`}/><DetailStat icon={<MapPin/>} label="Standort" value={club.city||"Nicht angegeben"}/><DetailStat icon={<Trophy/>} label="Liga" value={club.league||"Nicht angegeben"}/><DetailStat icon={<Euro/>} label="Kaderwert" value={money(squadValue)}/></div><section className="panel club-squad-panel"><div className="panel-heading"><div><h2>Kader</h2><p>{squad.length} Spieler im Datensatz</p></div></div>{squad.length?<div className="table-scroll"><table className="players-table"><thead><tr><th>Spieler</th><th>Position</th><th>Alter</th><th className="align-right">Marktwert</th></tr></thead><tbody>{squad.map(p=><tr key={p.id} onClick={()=>onSelectPlayer(p)}><td><strong>{p.name}</strong></td><td>{p.position||"–"}</td><td>{p.age||"–"}</td><td className="align-right value-cell">{money(p.market_value)}</td></tr>)}</tbody></table></div>:<div className="empty-state">Noch keine Spieler diesem Verein zugeordnet.</div>}</section></section>;
+}
