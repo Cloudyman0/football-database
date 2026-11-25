@@ -50,3 +50,38 @@
 .three-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
 @media(max-width:950px){.three-columns{grid-template-columns:1fr 1fr}}
 @media(max-width:650px){.three-columns{grid-template-columns:1fr}}
+
+/* Fix: Vereinslogos in Leaflet-Markern vollständig und unverzerrt darstellen */
+.leaflet-marker-icon.club-marker-wrapper{width:46px!important;height:46px!important;background:transparent!important;border:0!important;overflow:visible!important}
+.leaflet-marker-icon.club-marker-wrapper img{display:block!important;width:38px!important;height:38px!important;max-width:none!important;max-height:none!important;object-fit:contain!important;position:static!important;margin:0!important;padding:0!important;border:0!important}
+.field textarea{width:100%;border:1px solid #dfe6ee;border-radius:9px;padding:11px 12px;outline:0;color:#34465d;background:#fff;font:13px 'DM Sans',sans-serif;resize:vertical}
+.field textarea:focus{border-color:#80addd;box-shadow:0 0 0 3px #eaf3fd}
+.honeypot-field{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}
+.suggestion-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.suggestion-card{border:1px solid #e8edf3;border-radius:13px;padding:16px;background:#fff}
+.suggestion-card-head{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.suggestion-card-head strong{color:#2d4058;font-size:14px}
+.suggestion-card-head span,.suggestion-card p,.suggestion-card a{font-size:11px;color:#8794a5}
+.suggestion-card>p{margin:8px 0}.suggestion-card>p b{color:#53657b}
+.suggestion-values{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.suggestion-values>div{display:flex;flex-direction:column;gap:5px;padding:10px;border-radius:9px;background:#f7f9fc;min-width:0}
+.suggestion-values small{font-size:10px;color:#96a1af}.suggestion-values strong{font-size:12px;color:#34465d;overflow-wrap:anywhere}
+.suggestion-reason{padding:9px 10px;background:#fafbfd;border-radius:8px;line-height:1.5}
+.suggestion-actions{display:flex;gap:8px;margin-top:14px}.suggestion-actions button{flex:1;padding:9px 10px;font-size:11px}
+@media(max-width:650px){.suggestion-list{grid-template-columns:1fr}.suggestion-actions{flex-direction:column}}
+
+/* Vereinsübersicht: nach Land und Liga gruppieren */
+.club-directory-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:10px;margin:15px 0 20px}
+.club-directory-toolbar .filter-wrap{display:flex;align-items:center;gap:8px}
+.club-directory-toolbar .filter-wrap select{border:1px solid #e1e7ef;border-radius:10px;background:#fff;padding:10px 12px;color:#617187;font-size:12px;outline:0;min-width:145px}
+.club-country-groups{display:flex;flex-direction:column;gap:24px}
+.club-country-group{border:1px solid #e8edf3;border-radius:15px;padding:16px;background:#fbfcfe}
+.club-country-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid #e7edf4;margin-bottom:14px}
+.club-country-heading h3{margin:0;color:#2d4058;font:800 19px Manrope,sans-serif}
+.club-country-heading span,.club-league-heading span{font-size:11px;color:#8794a5}
+.club-league-group+.club-league-group{margin-top:19px}
+.club-league-heading{display:flex;align-items:center;gap:9px;margin:0 0 10px}
+.club-league-heading h4{margin:0;color:#53657b;font:800 13px Manrope,sans-serif}
+.club-league-heading span{background:#edf2f7;border-radius:20px;padding:3px 8px}
+.club-directory-toolbar .search-box{min-width:0}
+@media(max-width:750px){.club-directory-toolbar{grid-template-columns:1fr}.club-directory-toolbar .filter-wrap{width:100%}.club-directory-toolbar .filter-wrap select{flex:1;min-width:0}}
