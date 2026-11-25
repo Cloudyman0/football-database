@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Search, SlidersHorizontal, Plus, ArrowUpDown, Users, TrendingUp,
-  Shield, LogOut, X, ChevronLeft, Pencil, Trash2, Trophy, ChartNoAxesCombined,
+  Shield, LogOut, X, ChevronLeft, Pencil, Trash2, Trophy, ChartNoAxesCombined, MessageSquarePlus, Check, XCircle,
   Menu, UserRound, CalendarDays, Target, Footprints, Euro, LoaderCircle,
   AlertCircle, Database, RefreshCw, Building2, ImagePlus, MapPin, Ruler, Shirt, Map as MapIcon
 } from "lucide-react";
@@ -69,6 +69,15 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [showSuggestion, setShowSuggestion] = useState(false);
+  const [suggestionTarget, setSuggestionTarget] = useState(null);
+  const [suggestionForm, setSuggestionForm] = useState({field_name:"",proposed_value:"",reason:"",source_url:"",website:""});
+  const [suggestionBusy, setSuggestionBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestionError, setSuggestionError] = useState("");
+  const [clubSearch, setClubSearch] = useState("");
+  const [clubCountryFilter, setClubCountryFilter] = useState("all");
+  const [clubLeagueFilter, setClubLeagueFilter] = useState("all");
 
   useEffect(() => {
     if (!supabase) {
@@ -92,6 +101,15 @@ export default function App() {
     else setPlayers(data || []);
     setLoading(false);
   }
+
+  async function loadSuggestions() {
+    if (!supabase || !session) return;
+    const {data, error: fetchError} = await supabase.from("change_suggestions").select("*").eq("status","pending").order("created_at",{ascending:false});
+    if (fetchError) setSuggestionError(fetchError.message);
+    else { setSuggestions(data || []); setSuggestionError(""); }
+  }
+
+  useEffect(() => { if (session) loadSuggestions(); else setSuggestions([]); }, [session]);
 
   async function loadClubs() {
     if (!supabase) return;
@@ -204,17 +222,110 @@ export default function App() {
     else { await loadClubs(); await loadPlayers(); }
   }
 
+  function openSuggestion(type, entity) {
+    setSuggestionTarget({type, entity});
+    setSuggestionForm({field_name:"",proposed_value:"",reason:"",source_url:"",website:""});
+    setSuggestionError("");
+    setShowSuggestion(true);
+  }
+
+  async function submitSuggestion(e) {
+    e.preventDefault();
+    if (!suggestionTarget || !suggestionForm.field_name || !suggestionForm.proposed_value.trim()) return;
+    // Hidden honeypot: normal visitors never see or fill this field.
+    if (suggestionForm.website.trim()) { setShowSuggestion(false); return; }
+    setSuggestionBusy(true); setSuggestionError("");
+    const {type, entity} = suggestionTarget;
+    const currentValue = entity[suggestionForm.field_name];
+    const payload = {
+      entity_type:type, entity_id:entity.id, entity_name:entity.name,
+      field_name:suggestionForm.field_name,
+      current_value:currentValue == null ? "" : String(currentValue),
+      proposed_value:suggestionForm.proposed_value.trim(),
+      reason:suggestionForm.reason.trim() || null,
+      source_url:suggestionForm.source_url.trim() || null,
+      status:"pending"
+    };
+    const {error: insertError} = await supabase.from("change_suggestions").insert(payload);
+    if (insertError) setSuggestionError(insertError.message);
+    else { setShowSuggestion(false); setSuggestionTarget(null); }
+    setSuggestionBusy(false);
+  }
+
+  const suggestionFields = {
+    player:[
+      ["name","Spielername"],["club","Verein"],["nationality","Nationalität"],["position","Position"],["age","Alter"],
+      ["birth_date","Geburtsdatum"],["height_cm","Größe (cm)"],["shirt_number","Rückennummer"],["market_value","Marktwert (€)"],
+      ["goals","Tore"],["assists","Vorlagen"]
+    ],
+    club:[["name","Vereinsname"],["country","Land"],["league","Liga"],["city","Stadt"],["latitude","Breitengrad"],["longitude","Längengrad"]]
+  };
+
+  async function reviewSuggestion(item, approve) {
+    setSuggestionError("");
+    if (approve) {
+      const allowed = suggestionFields[item.entity_type]?.some(([field])=>field===item.field_name);
+      if (!allowed) { setSuggestionError("Dieses Feld kann nicht automatisch übernommen werden."); return; }
+      const numericFields = ["market_value","goals","assists","age","height_cm","shirt_number","latitude","longitude"];
+      const value = numericFields.includes(item.field_name) ? Number(item.proposed_value) : item.proposed_value;
+      if (numericFields.includes(item.field_name) && !Number.isFinite(value)) { setSuggestionError("Der vorgeschlagene Wert ist keine gültige Zahl."); return; }
+      const table = item.entity_type === "player" ? "players" : "clubs";
+      const updatePayload = {[item.field_name]:value};
+      if (item.entity_type === "player" && item.field_name === "club") {
+        const matchingClub = clubsData.find(c=>c.name.toLowerCase()===String(value).trim().toLowerCase());
+        if (matchingClub) updatePayload.club_id = matchingClub.id;
+      }
+      const {error: updateError} = await supabase.from(table).update(updatePayload).eq("id",item.entity_id);
+      if (updateError) { setSuggestionError(updateError.message); return; }
+      if (item.entity_type === "club") {
+        if (item.field_name === "name") {
+          const {error: renameError} = await supabase.from("players").update({club:String(value)}).eq("club_id",item.entity_id);
+          if (renameError) { setSuggestionError(renameError.message); return; }
+        }
+        await loadClubs(); await loadPlayers();
+      } else await loadPlayers();
+    }
+    const {error: statusError} = await supabase.from("change_suggestions").update({status:approve?"approved":"rejected",reviewed_at:new Date().toISOString()}).eq("id",item.id);
+    if (statusError) setSuggestionError(statusError.message);
+    else await loadSuggestions();
+  }
+
   function chooseSort(value) {
     if (sort === value) setDirection(d => d === "desc" ? "asc" : "desc");
     else { setSort(value); setDirection(value === "name" || value === "club" || value === "nationality" ? "asc" : "desc"); }
   }
+
+  const clubCountries = useMemo(() => [...new Set(clubsData.map(c => c.country?.trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"de")), [clubsData]);
+  const clubLeagues = useMemo(() => [...new Set(clubsData.map(c => c.league?.trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"de")), [clubsData]);
+  const filteredClubs = useMemo(() => {
+    const query = clubSearch.trim().toLocaleLowerCase("de");
+    return clubsData.filter(club => {
+      const matchesSearch = !query || [club.name, club.country, club.league, club.city].some(value => String(value || "").toLocaleLowerCase("de").includes(query));
+      const matchesCountry = clubCountryFilter === "all" || (club.country || "") === clubCountryFilter;
+      const matchesLeague = clubLeagueFilter === "all" || (club.league || "") === clubLeagueFilter;
+      return matchesSearch && matchesCountry && matchesLeague;
+    }).sort((a,b) => (a.country || "Unbekanntes Land").localeCompare(b.country || "Unbekanntes Land","de") || (a.league || "Unbekannte Liga").localeCompare(b.league || "Unbekannte Liga","de") || a.name.localeCompare(b.name,"de"));
+  }, [clubsData, clubSearch, clubCountryFilter, clubLeagueFilter]);
+  const clubGroups = useMemo(() => {
+    const countries = new Map();
+    filteredClubs.forEach(club => {
+      const country = club.country?.trim() || "Land nicht angegeben";
+      const league = club.league?.trim() || "Liga nicht angegeben";
+      if (!countries.has(country)) countries.set(country, new Map());
+      const leagues = countries.get(country);
+      if (!leagues.has(league)) leagues.set(league, []);
+      leagues.get(league).push(club);
+    });
+    return [...countries.entries()].map(([country, leagues]) => ({country, leagues:[...leagues.entries()]}));
+  }, [filteredClubs]);
 
   const navItems = [
     {id:"database",label:"Datenbank",icon:Database},
     {id:"top",label:"Top-Spieler",icon:Trophy},
     {id:"stats",label:"Statistiken",icon:ChartNoAxesCombined},
     {id:"clubs",label:"Vereine",icon:Building2},
-    {id:"map",label:"Karte",icon:MapIcon}
+    {id:"map",label:"Karte",icon:MapIcon},
+    {id:"suggestions",label:"Vorschläge",icon:MessageSquarePlus}
   ];
 
   return <div className="app-shell">
@@ -223,7 +334,7 @@ export default function App() {
         <span className="brand-mark"><Footprints size={21}/></span><span>Football<span className="brand-light">DB</span></span>
       </a>
       <nav className="desktop-nav">
-        {navItems.map(item=><button key={item.id} className={`nav-link ${activeTab===item.id&&!selected?"active":""}`} onClick={()=>{setSelected(null);setSelectedClub(null);setActiveTab(item.id);}}><item.icon size={17}/>{item.label}</button>)}
+        {navItems.filter(item=>item.id!=="suggestions" || session).map(item=><button key={item.id} className={`nav-link ${activeTab===item.id&&!selected?"active":""}`} onClick={()=>{setSelected(null);setSelectedClub(null);setActiveTab(item.id);}}><item.icon size={17}/>{item.label}</button>)}
       </nav>
       <div className="top-actions">
         {session ? <><span className="admin-pill"><Shield size={14}/> Admin</span><button className="icon-button" title="Abmelden" onClick={logout}><LogOut size={18}/></button></> :
@@ -232,10 +343,10 @@ export default function App() {
       </div>
     </header>
 
-    {mobileMenu && <div className="mobile-nav">{navItems.map(item=><button key={item.id} onClick={()=>{setActiveTab(item.id);setSelected(null);setSelectedClub(null);setMobileMenu(false);}}>{item.label}</button>)}</div>}
+    {mobileMenu && <div className="mobile-nav">{navItems.filter(item=>item.id!=="suggestions" || session).map(item=><button key={item.id} onClick={()=>{setActiveTab(item.id);setSelected(null);setSelectedClub(null);setMobileMenu(false);}}>{item.label}</button>)}</div>}
 
     <main className="main-content">
-      {selected ? <PlayerDetail player={selected} clubs={clubsData} isAdmin={!!session} onBack={()=>setSelected(null)} onEdit={()=>openEdit(selected)} onDelete={()=>deletePlayer(selected)} /> : selectedClub ? <ClubDetail club={selectedClub} players={players} onBack={()=>setSelectedClub(null)} onSelectPlayer={setSelected} /> :
+      {selected ? <PlayerDetail player={selected} clubs={clubsData} isAdmin={!!session} onBack={()=>setSelected(null)} onEdit={()=>openEdit(selected)} onDelete={()=>deletePlayer(selected)} onSuggest={()=>openSuggestion("player",selected)} /> : selectedClub ? <ClubDetail club={selectedClub} players={players} onBack={()=>setSelectedClub(null)} onSelectPlayer={setSelected} onSuggest={()=>openSuggestion("club",selectedClub)} isAdmin={!!session} onEdit={()=>openEditClub(selectedClub)} onDelete={()=>deleteClub(selectedClub)} /> :
       <>
         <section className="page-heading">
           <div><div className="eyebrow">DIE WELT DES FUSSBALLS</div><h1>{activeTab==="database"?"Spielerdatenbank":activeTab==="top"?"Top-Spieler":activeTab==="clubs"?"Vereine":activeTab==="map"?"Vereinskarte":"Statistiken"}</h1>
@@ -267,19 +378,42 @@ export default function App() {
 
         {activeTab==="map" && <ClubMap clubs={clubsData} players={players} onOpenClub={setSelectedClub}/>}
 
+        {activeTab==="suggestions" && session && <section className="panel">
+          <div className="panel-heading"><div><h2>Offene Änderungsvorschläge</h2><p>{suggestions.length} Vorschläge warten auf Prüfung</p></div><button className="subtle-button" onClick={loadSuggestions}><RefreshCw size={16}/> Aktualisieren</button></div>
+          {suggestionError && <div className="alert"><AlertCircle size={18}/><span>{suggestionError}</span></div>}
+          {suggestions.length ? <div className="suggestion-list">{suggestions.map(item=><article className="suggestion-card" key={item.id}>
+            <div className="suggestion-card-head"><strong>{item.entity_name}</strong><span>{item.entity_type==="player"?"Spieler":"Verein"} · {new Date(item.created_at).toLocaleString("de-DE")}</span></div>
+            <p><b>{(suggestionFields[item.entity_type]||[]).find(([f])=>f===item.field_name)?.[1] || item.field_name}</b></p>
+            <div className="suggestion-values"><div><small>Bisher</small><strong>{item.current_value || "–"}</strong></div><div><small>Vorschlag</small><strong>{item.proposed_value}</strong></div></div>
+            {item.reason && <p className="suggestion-reason">{item.reason}</p>}
+            {item.source_url && /^https?:\/\//i.test(item.source_url) && <a href={item.source_url} target="_blank" rel="noreferrer">Quelle ansehen</a>}
+            <div className="suggestion-actions"><button className="primary-button" onClick={()=>reviewSuggestion(item,true)}><Check size={15}/> Übernehmen</button><button className="danger-button" onClick={()=>reviewSuggestion(item,false)}><XCircle size={15}/> Ablehnen</button></div>
+          </article>)}</div> : <div className="empty-state"><MessageSquarePlus size={30}/><strong>Keine offenen Vorschläge</strong><span>Neue Einsendungen von Besuchern erscheinen hier.</span></div>}
+        </section>}
+
         {activeTab==="clubs" && <section className="panel">
-          <div className="panel-heading"><div><h2>Alle Vereine</h2><p>{clubsData.length} {clubsData.length===1?"Verein":"Vereine"} in der Datenbank</p></div><button className="subtle-button" onClick={loadClubs}><RefreshCw size={16}/> Aktualisieren</button></div>
-          {clubsData.length ? <div className="clubs-grid">{clubsData.map(club => {
-            const squad = players.filter(p => p.club_id === club.id || (!p.club_id && p.club === club.name));
-            const squadValue = squad.reduce((sum,p)=>sum+Number(p.market_value || 0),0);
-            return <article className="club-card" key={club.id}>
-              <div className="club-card-top">{club.logo_url ? <img src={club.logo_url} alt={`${club.name} Logo`} className="club-logo"/> : <div className="club-logo-placeholder"><Building2/></div>}
-                <div className="club-card-info"><h3>{club.name}</h3><p>{[club.league,club.country].filter(Boolean).join(" · ") || "Vereinsprofil"}</p></div>
-              </div>
-              <div className="club-card-stats"><span><strong>{squad.length}</strong> Spieler</span><span><strong>{money(squadValue)}</strong> Kaderwert</span></div>
-              {session && <div className="club-card-actions"><button className="secondary-button" onClick={()=>openEditClub(club)}><Pencil size={14}/> Bearbeiten</button><button className="danger-button" onClick={()=>deleteClub(club)}><Trash2 size={14}/> Löschen</button></div>}
-            </article>;
-          })}</div> : <div className="empty-state"><Building2 size={30}/><strong>Noch keine Vereine vorhanden</strong><span>{session ? "Lege deinen ersten Verein an und lade sein Logo hoch." : "Vereinsprofile werden hier angezeigt."}</span></div>}
+          <div className="panel-heading"><div><h2>Alle Vereine</h2><p>{filteredClubs.length} von {clubsData.length} {clubsData.length===1?"Verein":"Vereinen"}</p></div><button className="subtle-button" onClick={loadClubs}><RefreshCw size={16}/> Aktualisieren</button></div>
+          <div className="club-directory-toolbar">
+            <label className="search-box"><Search size={18}/><input value={clubSearch} onChange={e=>setClubSearch(e.target.value)} placeholder="Verein, Stadt, Land oder Liga suchen..."/>{clubSearch&&<button onClick={()=>setClubSearch("")}><X size={15}/></button>}</label>
+            <div className="filter-wrap"><SlidersHorizontal size={17}/><select value={clubCountryFilter} onChange={e=>setClubCountryFilter(e.target.value)}><option value="all">Alle Länder</option>{clubCountries.map(country=><option key={country} value={country}>{country}</option>)}</select><select value={clubLeagueFilter} onChange={e=>setClubLeagueFilter(e.target.value)}><option value="all">Alle Ligen</option>{clubLeagues.map(league=><option key={league} value={league}>{league}</option>)}</select></div>
+          </div>
+          {filteredClubs.length ? <div className="club-country-groups">{clubGroups.map(group=><section className="club-country-group" key={group.country}>
+            <div className="club-country-heading"><h3>{group.country}</h3><span>{group.leagues.reduce((sum,[,items])=>sum+items.length,0)} Vereine</span></div>
+            {group.leagues.map(([league,leagueClubs])=><div className="club-league-group" key={`${group.country}-${league}`}>
+              <div className="club-league-heading"><h4>{league}</h4><span>{leagueClubs.length}</span></div>
+              <div className="clubs-grid">{leagueClubs.map(club => {
+                const squad = players.filter(p => p.club_id === club.id || (!p.club_id && p.club === club.name));
+                const squadValue = squad.reduce((sum,p)=>sum+Number(p.market_value || 0),0);
+                return <article className="club-card" key={club.id}>
+                  <div className="club-card-top">{club.logo_url ? <img src={club.logo_url} alt={`${club.name} Logo`} className="club-logo"/> : <div className="club-logo-placeholder"><Building2/></div>}
+                    <div className="club-card-info"><h3>{club.name}</h3><p>{[club.league,club.country].filter(Boolean).join(" · ") || "Vereinsprofil"}</p></div>
+                  </div>
+                  <div className="club-card-stats"><span><strong>{squad.length}</strong> Spieler</span><span><strong>{money(squadValue)}</strong> Kaderwert</span></div>
+                  <div className="club-card-actions"><button className="secondary-button" onClick={()=>setSelectedClub(club)}>Profil öffnen</button>{session && <><button className="secondary-button" onClick={()=>openEditClub(club)}><Pencil size={14}/> Bearbeiten</button><button className="danger-button" onClick={()=>deleteClub(club)}><Trash2 size={14}/> Löschen</button></>}</div>
+                </article>;
+              })}</div>
+            </div>)}
+          </section>)}</div> : <div className="empty-state"><Building2 size={30}/><strong>{clubsData.length ? "Keine passenden Vereine gefunden" : "Noch keine Vereine vorhanden"}</strong><span>{clubsData.length ? "Ändere deine Suche oder die Filter." : session ? "Lege deinen ersten Verein an und lade sein Logo hoch." : "Vereinsprofile werden hier angezeigt."}</span></div>}
         </section>}
 
         {activeTab==="stats" && <section className="panel"><div className="panel-heading"><div><h2>Datenbank-Überblick</h2><p>Ein paar Kennzahlen zu deinen Spielern</p></div></div>
@@ -295,6 +429,17 @@ export default function App() {
     </main>
 
     <footer className="footer"><span>Football DB</span><span>Deine Fußball-Datenbank</span></footer>
+
+    {showSuggestion && suggestionTarget && <Modal title="Änderung vorschlagen" onClose={()=>setShowSuggestion(false)} wide><form onSubmit={submitSuggestion} className="form-stack">
+      <p className="modal-intro">Du schlägst eine Korrektur für <strong>{suggestionTarget.entity.name}</strong> vor. Die Änderung wird erst nach Prüfung übernommen.</p>
+      <Field label="Was soll geändert werden?"><select required value={suggestionForm.field_name} onChange={e=>setSuggestionForm({...suggestionForm,field_name:e.target.value,proposed_value:""})}><option value="">Feld auswählen</option>{suggestionFields[suggestionTarget.type].map(([field,label])=><option key={field} value={field}>{label}</option>)}</select></Field>
+      <Field label="Richtiger Wert"><input required value={suggestionForm.proposed_value} onChange={e=>setSuggestionForm({...suggestionForm,proposed_value:e.target.value})} placeholder="Dein Korrekturvorschlag" maxLength={500}/></Field>
+      <Field label="Begründung (optional)"><textarea rows="3" value={suggestionForm.reason} onChange={e=>setSuggestionForm({...suggestionForm,reason:e.target.value})} placeholder="Warum ist die Änderung nötig?" maxLength={1000}/></Field>
+      <Field label="Quelle / Link (optional)"><input type="url" value={suggestionForm.source_url} onChange={e=>setSuggestionForm({...suggestionForm,source_url:e.target.value})} placeholder="https://..." maxLength={500}/></Field>
+      <label className="honeypot-field" aria-hidden="true">Website<input tabIndex="-1" autoComplete="off" value={suggestionForm.website} onChange={e=>setSuggestionForm({...suggestionForm,website:e.target.value})}/></label>
+      {suggestionError&&<p className="form-error">{suggestionError}</p>}
+      <div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setShowSuggestion(false)}>Abbrechen</button><button className="primary-button" disabled={suggestionBusy}>{suggestionBusy?<LoaderCircle className="spin"/>:<><MessageSquarePlus size={16}/> Vorschlag senden</>}</button></div>
+    </form></Modal>}
 
     {showLogin && <Modal title="Admin-Login" onClose={()=>setShowLogin(false)}><form onSubmit={login} className="form-stack"><p className="modal-intro">Melde dich an, um die Spielerdatenbank zu verwalten.</p><Field label="E-Mail"><input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="admin@email.com"/></Field><Field label="Passwort"><input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Dein Passwort"/></Field>{error&&<p className="form-error">{error}</p>}<button className="primary-button full" disabled={authBusy}>{authBusy?<LoaderCircle className="spin"/>:"Anmelden"}</button></form></Modal>}
 
@@ -343,7 +488,7 @@ function PlayerTable({players,loading,onSelect,clubs}) {
   if (loading) return <div className="loading-state"><LoaderCircle className="spin"/>Spieler werden geladen...</div>;
   return <div className="table-scroll"><table className="players-table"><thead><tr><th>Spieler</th><th>Verein</th><th>Alter</th><th>Nationalität</th><th>Tore</th><th>Vorlagen</th><th className="align-right">Marktwert</th></tr></thead><tbody>{players.map(p=><tr key={p.id} onClick={()=>onSelect(p)}><td><div className="player-name-cell"><span className="avatar">{initials(p.name)}</span><strong>{p.name}</strong></div></td><td><span className="club-name-cell">{(clubs.find(c=>c.id===p.club_id)?.logo_url) && <img src={clubs.find(c=>c.id===p.club_id).logo_url} alt="" className="table-club-logo"/>}{p.club}</span></td><td>{p.age}</td><td><span className="nation">{flagFor(p.nationality)} {p.nationality}</span></td><td>{number(p.goals)}</td><td>{number(p.assists)}</td><td className="align-right value-cell">{money(p.market_value)}</td></tr>)}</tbody></table></div>;
 }
-function PlayerDetail({player,clubs,isAdmin,onBack,onEdit,onDelete}) {
+function PlayerDetail({player,clubs,isAdmin,onBack,onEdit,onDelete,onSuggest}) {
   const club = clubs.find(c => c.id === player.club_id);
   return <section className="detail-page"><button className="back-button" onClick={onBack}><ChevronLeft size={17}/> Zurück zur Datenbank</button><div className="detail-hero"><div className="detail-avatar">{initials(player.name)}</div><div className="detail-main"><span className="eyebrow">SPIELERPROFIL</span><h1>{player.name}</h1><p>{club?.logo_url && <img src={club.logo_url} alt="" className="detail-club-logo"/>}{player.club} <span className="dot">·</span> {flagFor(player.nationality)} {player.nationality}</p></div><div className="detail-value"><span>Marktwert</span><strong>{money(player.market_value)}</strong></div></div><div className="detail-stats"><DetailStat icon={<CalendarDays/>} label="Alter" value={`${player.age} Jahre`}/><DetailStat icon={<Target/>} label="Tore" value={number(player.goals)}/><DetailStat icon={<Footprints/>} label="Vorlagen" value={number(player.assists)}/><DetailStat icon={<Shield/>} label="Nationalität" value={`${flagFor(player.nationality)} ${player.nationality}`}/></div>
     {(player.position || player.birth_date || player.height_cm || player.shirt_number) && <div className="detail-stats extra-player-stats">
@@ -352,7 +497,7 @@ function PlayerDetail({player,clubs,isAdmin,onBack,onEdit,onDelete}) {
       {player.height_cm && <DetailStat icon={<Ruler/>} label="Größe" value={`${player.height_cm} cm`}/>}
       {player.shirt_number && <DetailStat icon={<Shirt/>} label="Rückennummer" value={`#${player.shirt_number}`}/>}
     </div>}
-    {isAdmin&&<div className="detail-admin"><span>Admin-Aktionen</span><div><button className="secondary-button" onClick={onEdit}><Pencil size={16}/> Bearbeiten</button><button className="danger-button" onClick={onDelete}><Trash2 size={16}/> Löschen</button></div></div>}</section>;
+    <div className="detail-admin"><span>{isAdmin?"Admin-Aktionen":"Stimmt etwas nicht?"}</span><div><button className="secondary-button" onClick={onSuggest}><MessageSquarePlus size={16}/> Änderung vorschlagen</button>{isAdmin&&<><button className="secondary-button" onClick={onEdit}><Pencil size={16}/> Bearbeiten</button><button className="danger-button" onClick={onDelete}><Trash2 size={16}/> Löschen</button></>}</div></div></section>;
 }
 function DetailStat({icon,label,value}) { return <div className="detail-stat"><span className="stat-icon">{icon}</span><span className="stat-label">{label}</span><strong>{value}</strong></div>; }
 function Ranking({title,icon,players,stat,unit,onSelect}) { return <section className="panel ranking-panel"><div className="panel-heading"><div className="ranking-title">{icon}<div><h2>{title}</h2><p>Aktuelle Saison</p></div></div></div>{players.length?players.map((p,i)=><button className="ranking-row" key={p.id} onClick={()=>onSelect(p)}><span className="rank-number">{i+1}</span><span className="avatar">{initials(p.name)}</span><span className="ranking-player"><strong>{p.name}</strong><small>{p.club}</small></span><strong className="ranking-score">{stat==="market_value"?money(p[stat]):p[stat]} <small>{unit}</small></strong></button>):<div className="empty-state">Noch keine Spieler vorhanden.</div>}</section>; }
@@ -386,12 +531,15 @@ function ClubMap({clubs,players,onOpenClub}) {
 function makeClubIcon(logoUrl,name) {
   const rawUrl=String(logoUrl||"");
   const safeUrl=/^https?:\/\//i.test(rawUrl) ? rawUrl.replace(/&/g,"&amp;").replace(/\"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;") : "";
-  const inner=safeUrl ? `<img src="${safeUrl}" alt=""/>` : `<span>${String(name||"?").slice(0,1).toUpperCase()}</span>`;
-  return L.divIcon({className:"club-marker-wrapper",html:`<div class="map-club-marker">${inner}</div>`,iconSize:[42,42],iconAnchor:[21,21],popupAnchor:[0,-19]});
+  const safeInitial=String(name||"?").slice(0,1).toUpperCase().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const inner=safeUrl
+    ? `<div style="width:46px;height:46px;border-radius:50%;background:#fff;border:2px solid #fff;box-shadow:0 2px 9px #203b5a55;display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${safeUrl}" alt="" style="display:block;width:38px;height:38px;max-width:none;max-height:none;object-fit:contain;position:static;margin:0;padding:0;border:0" /></div>`
+    : `<div style="width:46px;height:46px;border-radius:50%;background:#fff;border:2px solid #fff;box-shadow:0 2px 9px #203b5a55;display:flex;align-items:center;justify-content:center;color:#3478c8;font-size:17px;font-weight:800">${safeInitial}</div>`;
+  return L.divIcon({className:"club-marker-wrapper",html:inner,iconSize:[46,46],iconAnchor:[23,23],popupAnchor:[0,-21]});
 }
 
-function ClubDetail({club,players,onBack,onSelectPlayer}) {
+function ClubDetail({club,players,onBack,onSelectPlayer,onSuggest,isAdmin,onEdit,onDelete}) {
   const squad=players.filter(p=>p.club_id===club.id || (!p.club_id && p.club===club.name)).sort((a,b)=>Number(b.market_value||0)-Number(a.market_value||0));
   const squadValue=squad.reduce((sum,p)=>sum+Number(p.market_value||0),0);
-  return <section className="detail-page"><button className="back-button" onClick={onBack}><ChevronLeft size={17}/> Zurück</button><div className="detail-hero"><div className="club-detail-logo-wrap">{club.logo_url?<img src={club.logo_url} alt={`${club.name} Logo`}/>:<Building2/>}</div><div className="detail-main"><span className="eyebrow">VEREINSPROFIL</span><h1>{club.name}</h1><p>{[club.city,club.country,club.league].filter(Boolean).join(" · ")}</p></div><div className="detail-value"><span>Kaderwert</span><strong>{money(squadValue)}</strong></div></div><div className="detail-stats"><DetailStat icon={<Users/>} label="Kadergröße" value={`${squad.length} Spieler`}/><DetailStat icon={<MapPin/>} label="Standort" value={club.city||"Nicht angegeben"}/><DetailStat icon={<Trophy/>} label="Liga" value={club.league||"Nicht angegeben"}/><DetailStat icon={<Euro/>} label="Kaderwert" value={money(squadValue)}/></div><section className="panel club-squad-panel"><div className="panel-heading"><div><h2>Kader</h2><p>{squad.length} Spieler im Datensatz</p></div></div>{squad.length?<div className="table-scroll"><table className="players-table"><thead><tr><th>Spieler</th><th>Position</th><th>Alter</th><th className="align-right">Marktwert</th></tr></thead><tbody>{squad.map(p=><tr key={p.id} onClick={()=>onSelectPlayer(p)}><td><strong>{p.name}</strong></td><td>{p.position||"–"}</td><td>{p.age||"–"}</td><td className="align-right value-cell">{money(p.market_value)}</td></tr>)}</tbody></table></div>:<div className="empty-state">Noch keine Spieler diesem Verein zugeordnet.</div>}</section></section>;
+  return <section className="detail-page"><button className="back-button" onClick={onBack}><ChevronLeft size={17}/> Zurück</button><div className="detail-hero"><div className="club-detail-logo-wrap">{club.logo_url?<img src={club.logo_url} alt={`${club.name} Logo`}/>:<Building2/>}</div><div className="detail-main"><span className="eyebrow">VEREINSPROFIL</span><h1>{club.name}</h1><p>{[club.city,club.country,club.league].filter(Boolean).join(" · ")}</p></div><div className="detail-value"><span>Kaderwert</span><strong>{money(squadValue)}</strong></div></div><div className="detail-stats"><DetailStat icon={<Users/>} label="Kadergröße" value={`${squad.length} Spieler`}/><DetailStat icon={<MapPin/>} label="Standort" value={club.city||"Nicht angegeben"}/><DetailStat icon={<Trophy/>} label="Liga" value={club.league||"Nicht angegeben"}/><DetailStat icon={<Euro/>} label="Kaderwert" value={money(squadValue)}/></div><section className="panel club-squad-panel"><div className="panel-heading"><div><h2>Kader</h2><p>{squad.length} Spieler im Datensatz</p></div></div>{squad.length?<div className="table-scroll"><table className="players-table"><thead><tr><th>Spieler</th><th>Position</th><th>Alter</th><th className="align-right">Marktwert</th></tr></thead><tbody>{squad.map(p=><tr key={p.id} onClick={()=>onSelectPlayer(p)}><td><strong>{p.name}</strong></td><td>{p.position||"–"}</td><td>{p.age||"–"}</td><td className="align-right value-cell">{money(p.market_value)}</td></tr>)}</tbody></table></div>:<div className="empty-state">Noch keine Spieler diesem Verein zugeordnet.</div>}</section><div className="detail-admin"><span>{isAdmin?"Admin-Aktionen":"Stimmt etwas nicht?"}</span><div><button className="secondary-button" onClick={onSuggest}><MessageSquarePlus size={16}/> Änderung vorschlagen</button>{isAdmin&&<><button className="secondary-button" onClick={onEdit}><Pencil size={16}/> Bearbeiten</button><button className="danger-button" onClick={onDelete}><Trash2 size={16}/> Löschen</button></>}</div></div></section>;
 }
